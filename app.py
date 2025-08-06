@@ -1,15 +1,17 @@
-
 from flask import Flask, request, abort
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.v3.messaging import MessagingApi, Configuration, ReplyMessageRequest, TextMessage
+from linebot.v3.webhook import WebhookHandler
+from linebot.v3.exceptions import InvalidSignatureError
+from linebot.v3.webhooks import MessageEvent
+from linebot.v3.messaging.models import TextMessage as EventTextMessage
 import openai
 import os
 
 app = Flask(__name__)
 
-line_bot_api = LineBotApi(os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
-handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
+configuration = Configuration(access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
+line_bot_api = MessagingApi(configuration)
+handler = WebhookHandler(channel_secret=os.environ["LINE_CHANNEL_SECRET"])
 openai.api_key = os.environ["OPENAI_API_KEY"]
 
 @app.route("/callback", methods=["POST"])
@@ -24,7 +26,7 @@ def callback():
 
     return "OK"
 
-@handler.add(MessageEvent, message=TextMessage)
+@handler.add(MessageEvent, message=EventTextMessage)
 def handle_message(event):
     user_input = event.message.text
 
@@ -32,9 +34,7 @@ def handle_message(event):
 
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
+        messages=[{"role": "user", "content": prompt}],
         max_tokens=100,
         temperature=0.7,
     )
@@ -42,6 +42,8 @@ def handle_message(event):
     reply = response.choices[0].message['content'].strip()
 
     line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply)
+        ReplyMessageRequest(
+            reply_token=event.reply_token,
+            messages=[TextMessage(text=reply)]
+        )
     )
